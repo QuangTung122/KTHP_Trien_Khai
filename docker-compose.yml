@@ -11,9 +11,9 @@ networks:
 volumes:
   mysql_data:
   grafana_data:
+  loki_data:
 
 services:
-  # --- CÁC DỊCH VỤ GIAI ĐOẠN 1 ---
   inventory-app:
     build: ./app
     container_name: inventory-app
@@ -81,7 +81,6 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  # --- CÁC DỊCH VỤ GIÁM SÁT (GIAI ĐOẠN 2) ---
   nginx-exporter:
     image: nginx/nginx-prometheus-exporter:0.11.0
     container_name: inventory-nginx-exporter
@@ -143,3 +142,30 @@ services:
       - monitoring_net
     depends_on:
       - prometheus
+      - loki
+
+  loki:
+    image: grafana/loki:2.8.2
+    container_name: inventory-loki
+    restart: unless-stopped
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - monitoring_net
+
+  promtail:
+    image: grafana/promtail:2.8.2
+    container_name: inventory-promtail
+    restart: unless-stopped
+    volumes:
+      - ./promtail/promtail-config.yaml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - monitoring_net
+    depends_on:
+      - loki
