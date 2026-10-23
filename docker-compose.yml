@@ -5,11 +5,15 @@ networks:
     driver: bridge
   backend_net:
     driver: bridge
+  monitoring_net:
+    driver: bridge
 
 volumes:
   mysql_data:
+  grafana_data:
 
 services:
+  # --- CÁC DỊCH VỤ GIAI ĐOẠN 1 ---
   inventory-app:
     build: ./app
     container_name: inventory-app
@@ -71,7 +75,71 @@ services:
       - ./nginx/certs:/etc/nginx/certs:ro
     networks:
       - frontend_net
+      - monitoring_net
     depends_on:
       - inventory-app
     security_opt:
       - no-new-privileges:true
+
+  # --- CÁC DỊCH VỤ GIÁM SÁT (GIAI ĐOẠN 2) ---
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:0.11.0
+    container_name: inventory-nginx-exporter
+    restart: unless-stopped
+    command:
+      - -nginx.scrape-uri=http://nginx/nginx_status
+    networks:
+      - monitoring_net
+    depends_on:
+      - nginx
+
+  mysql-exporter:
+    image: prom/mysqld-exporter:v0.14.0
+    container_name: inventory-mysql-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "${MYSQL_USER}:${MYSQL_PASSWORD}@(mysql:3306)/"
+    networks:
+      - backend_net
+      - monitoring_net
+    depends_on:
+      - mysql
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    container_name: inventory-cadvisor
+    restart: unless-stopped
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - monitoring_net
+
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: inventory-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - monitoring_net
+
+  grafana:
+    image: grafana/grafana:10.0.0
+    container_name: inventory-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - monitoring_net
+    depends_on:
+      - prometheus
